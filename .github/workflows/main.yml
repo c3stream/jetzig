@@ -15,6 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        zig-version: [0.12.0, 0.13.0, master]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +25,7 @@ jobs:
       - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2.2.0
         with:
-          version: master
+          version: ${{ matrix.zig-version }}
 
       - name: Cache Zig dependencies
         uses: actions/cache@v3
@@ -32,9 +33,9 @@ jobs:
           path: |
             ~/.cache/zig
             ~/AppData/Local/zig
-          key: ${{ runner.os }}-zig-${{ hashFiles('**/build.zig.zon') }}
+          key: ${{ runner.os }}-zig-${{ matrix.zig-version }}-${{ hashFiles('**/build.zig.zon') }}
           restore-keys: |
-            ${{ runner.os }}-zig-
+            ${{ runner.os }}-zig-${{ matrix.zig-version }}-
 
       - name: Build
         run: zig build --verbose
@@ -54,6 +55,7 @@ jobs:
     strategy:
       matrix:
         target: [x86_64-windows, x86_64-linux, x86_64-macos, aarch64-macos]
+        zig-version: [0.12.0, 0.13.0, master]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,21 +64,21 @@ jobs:
       - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2.2.0
         with:
-          version: master
+          version: ${{ matrix.zig-version }}
 
       - name: Build artifacts
         run: |
-          mkdir -p "artifacts/${{ matrix.target }}"
+          mkdir -p "artifacts/${{ matrix.target }}-zig-${{ matrix.zig-version }}"
           cd cli
-          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe --prefix ${{ github.workspace }}/artifacts/${{ matrix.target }}/
-          sed -e '1,5d' < ${{ github.workspace }}/README.md > ${{ github.workspace }}/artifacts/${{ matrix.target }}/README.md
-          cp ${{ github.workspace }}/LICENSE ${{ github.workspace }}/artifacts/${{ matrix.target }}/
+          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe --prefix ${{ github.workspace }}/artifacts/${{ matrix.target }}-zig-${{ matrix.zig-version }}/
+          sed -e '1,5d' < ${{ github.workspace }}/README.md > ${{ github.workspace }}/artifacts/${{ matrix.target }}-zig-${{ matrix.zig-version }}/README.md
+          cp ${{ github.workspace }}/LICENSE ${{ github.workspace }}/artifacts/${{ matrix.target }}-zig-${{ matrix.zig-version }}/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: build-${{ matrix.target }}
-          path: artifacts/${{ matrix.target }}
+          name: build-${{ matrix.target }}-zig-${{ matrix.zig-version }}
+          path: artifacts/${{ matrix.target }}-zig-${{ matrix.zig-version }}
 
   release:
     needs: build-artifacts
