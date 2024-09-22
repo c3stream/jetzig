@@ -50,6 +50,7 @@ jobs:
   build-artifacts:
     needs: build-and-test
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     strategy:
       matrix:
         target: [x86_64-windows, x86_64-linux, x86_64-macos, aarch64-macos]
