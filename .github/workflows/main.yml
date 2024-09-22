@@ -1,0 +1,113 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2.2.0
+        with:
+          version: master
+
+      - name: Cache Zig dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/zig
+            ~/AppData/Local/zig
+          key: ${{ runner.os }}-zig-${{ hashFiles('**/build.zig.zon') }}
+          restore-keys: |
+            ${{ runner.os }}-zig-
+
+      - name: Build
+        run: zig build --verbose
+        
+      - name: Run Tests
+        run: zig build test
+
+      - name: Run App Tests
+        run: |
+          cd demo
+          zig build jetzig:test
+
+  build-artifacts:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        target: [x86_64-windows, x86_64-linux, x86_64-macos, aarch64-macos]
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2.2.0
+        with:
+          version: master
+
+      - name: Build artifacts
+        run: |
+          mkdir -p "artifacts/${{ matrix.target }}"
+          cd cli
+          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSafe --prefix ${{ github.workspace }}/artifacts/${{ matrix.target }}/
+          sed -e '1,5d' < ${{ github.workspace }}/README.md > ${{ github.workspace }}/artifacts/${{ matrix.target }}/README.md
+          cp ${{ github.workspace }}/LICENSE ${{ github.workspace }}/artifacts/${{ matrix.target }}/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-${{ matrix.target }}
+          path: artifacts/${{ matrix.target }}
+
+  release:
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}-${{ github.sha }}
+          release_name: Release ${{ github.ref }}-${{ github.sha }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        run: |
+          for target in artifacts/*; do
+            targetName=$(basename "$target")
+            zip -r "${targetName}.zip" "$target"
+            curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                 -H "Content-Type: application/zip" \
+                 --data-binary @"${targetName}.zip" \
+                 "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.create_release.outputs.id }}/assets?name=${targetName}.zip"
+          done
