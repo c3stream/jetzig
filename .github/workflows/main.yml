@@ -102,12 +102,11 @@ jobs:
           prerelease: false
 
       - name: Upload Release Assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           for target in artifacts/*; do
             targetName=$(basename "$target")
             zip -r "${targetName}.zip" "$target"
-            curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                 -H "Content-Type: application/zip" \
-                 --data-binary @"${targetName}.zip" \
-                 "https://uploads.github.com/repos/${{ github.repository }}/releases/${{ steps.create_release.outputs.id }}/assets?name=${targetName}.zip"
+            gh release upload ${{ steps.create_release.outputs.id }} "${targetName}.zip"
           done
